@@ -1,6 +1,11 @@
 import { AvailableNetworks } from '../../services/config-manager-types';
 import { ConfigManagerV2 } from '../../services/config-manager-v2';
 
+export interface Mapping {
+  key: string;
+  value: string;
+}
+
 export namespace CurveConfig {
   export interface NetworkConfig {
     allowedSlippage: string;
@@ -11,6 +16,7 @@ export namespace CurveConfig {
     availableNetworks: Array<AvailableNetworks>;
     maximumHops: number;
     chainType: string;
+    secondaryNetwork: Array<Mapping>;
   }
 
   export const config: NetworkConfig = {
@@ -30,7 +36,10 @@ export namespace CurveConfig {
       { chain: 'polygon', networks: ['mainnet', 'mumbai'] },
       { chain: 'avalanche', networks: ['avalanche', 'fuji'] },
       { chain: 'etherium', networks: ['mainnet', 'arbitrum_one', 'optimism'] },
-      { chain: 'avalanche', networks: ['avalanche', 'fuji'] },
+    ],
+    secondaryNetwork: [
+      { key: 'polygon', value: 'avalanche' },
+      { key: 'avalanche', value: 'polygon' },
     ],
   };
 }

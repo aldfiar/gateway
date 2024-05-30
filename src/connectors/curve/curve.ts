@@ -9,14 +9,15 @@ import {
 import { Uniswapish, UniswapishTrade } from '../../services/common-interfaces';
 import { Ethereum } from '../../chains/ethereum/ethereum';
 import { Polygon } from '../../chains/polygon/polygon';
-import { CurveConfig } from './curve.config';
+import { CurveConfig, Mapping } from './curve.config';
 import { Avalanche } from '../../chains/avalanche/avalanche';
 import tokens from './curve_tokens.json';
-import oomukade, { Query } from 'oomukade';
 import { CurveTokenList } from './types';
 import { CurrencyAmount, Fraction, Token } from '@uniswap/sdk-core';
 import { logger } from '../../services/logger';
 import { EVMTxBroadcaster } from '../../chains/ethereum/evm.broadcaster';
+import routerAbi from './curve_router_abi.json';
+import oomukade, { Query } from 'oomukade';
 
 export interface CurveTrade {
   from: string;
@@ -35,11 +36,12 @@ export class CurveFi implements Uniswapish {
   private chainId;
   private tokenList: Record<string, Token> = {};
   private _ready: boolean = false;
+  private network: string;
   public router: string;
   public routerAbi;
   public ttl: number;
   private _config: typeof CurveConfig.config;
-
+  private _secondary_chains: Array<Mapping>;
   private constructor(chain: string, network: string) {
     this._config = CurveConfig.config;
     if (chain === 'ethereum') {
@@ -50,10 +52,12 @@ export class CurveFi implements Uniswapish {
       this.chain = Polygon.getInstance(network);
     }
     this.router = this._config.routerAddress(network);
+    this._secondary_chains = this._config.secondaryNetwork;
     this.chainId = this.chain.chainId;
     this.ttl = this._config.ttl;
     this.gasLimitEstimate = this._config.gasLimitEstimate;
-    this.routerAbi = '';
+    this.routerAbi = routerAbi;
+    this.network = network;
     const curveList: CurveTokenList = tokens;
     const chainTokens = curveList[chain];
     for (const token of chainTokens.tokens) {
@@ -90,6 +94,15 @@ export class CurveFi implements Uniswapish {
     return this.tokenList[address];
   }
 
+  getTokenBySymbol(symbol: string): Token | null {
+    const mapping = this._secondary_chains.pop();
+
+    if (mapping != undefined && mapping.key === this.network) {
+      return this.tokenList[symbol];
+    }
+    return this.tokenList[symbol] ? this.tokenList[symbol] : null;
+  }
+
   async estimateSellTrade(
     baseToken: Token,
     quoteToken: Token,
@@ -113,13 +126,13 @@ export class CurveFi implements Uniswapish {
           : Number.parseFloat(allowedSlippage),
     };
 
-    const routes = await oomukade.scanRoute(query);
-    const route = routes.pop();
+    const scan = await oomukade.scanRoute(query);
+    const route = scan.route;
     if (route != undefined) {
-      const prices = await oomukade.estimatePriceForRoute(route);
+      // const prices = await oomukade.estimatePriceForRoute(route);
       const expectedAmount = CurrencyAmount.fromRawAmount(
         quoteToken,
-        route.amountOut,
+        scan.amountIn,
       );
       const tradeInfo = {
         trade: {
@@ -127,7 +140,7 @@ export class CurveFi implements Uniswapish {
           to: quoteToken.address,
           amount: Number(amount.toString()),
           expected: expectedAmount.toSignificant(8),
-          executionPrice: new Fraction(prices.executionPrice, '1'),
+          executionPrice: expectedAmount.asFraction,
           isBuy: false,
           query: query,
         },
@@ -203,7 +216,7 @@ export class CurveFi implements Uniswapish {
         `Dont have transaction data or query: ${castedTrade.query}`,
       );
     } else {
-      const contract = new Contract(this.router, transactionData.abi, wallet);
+      const contract = new Contract(this.router, routerAbi, wallet);
       const tx = await contract['start'](
         ...transactionData.args,
         overrideParams,
