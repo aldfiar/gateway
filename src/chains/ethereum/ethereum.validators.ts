@@ -1,12 +1,12 @@
 import {
   isNaturalNumberString,
-  validateTokenSymbols,
-  mkValidator,
   mkRequestValidator,
+  mkValidator,
   RequestValidator,
-  Validator,
-  validateToken,
   validateAmount,
+  validateToken,
+  validateTokenSymbols,
+  Validator,
 } from '../../services/validators';
 
 // invalid parameter errors
@@ -64,7 +64,8 @@ export const validateSpender: Validator = mkValidator(
       val === 'pancakeswap' ||
       val === 'xsswap' ||
       val === 'zigzag' ||
-      isAddress(val))
+      val === 'curve' ||
+      isAddress(val)),
 );
 
 export const validateNonce: Validator = mkValidator(

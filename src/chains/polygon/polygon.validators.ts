@@ -2,15 +2,15 @@ import {
   mkRequestValidator,
   mkValidator,
   RequestValidator,
-  Validator,
   validateAmount,
   validateToken,
   validateTokenSymbols,
+  Validator,
 } from '../../services/validators';
 import {
   isAddress,
-  validateNonce,
   validateAddress,
+  validateNonce,
 } from '../ethereum/ethereum.validators';
 
 export const invalidSpenderError: string =
@@ -27,7 +27,8 @@ export const validateSpender: Validator = mkValidator(
       val === 'sushi' ||
       val === 'quickswap' ||
       val === 'openocean' ||
-      isAddress(val))
+      val === 'curve' ||
+      isAddress(val)),
 );
 
 export const validatePolygonApproveRequest: RequestValidator =

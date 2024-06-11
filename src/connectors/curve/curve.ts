@@ -2,22 +2,22 @@ import {
   BigNumber,
   Contract,
   ContractInterface,
-  ContractTransaction,
+  ethers,
   Transaction,
   Wallet,
 } from 'ethers';
 import { Uniswapish, UniswapishTrade } from '../../services/common-interfaces';
 import { Ethereum } from '../../chains/ethereum/ethereum';
 import { Polygon } from '../../chains/polygon/polygon';
-import { CurveConfig, Mapping } from './curve.config';
+import { CurveConfig } from './curve.config';
 import { Avalanche } from '../../chains/avalanche/avalanche';
 import tokens from './curve_tokens.json';
 import { CurveTokenList } from './types';
 import { CurrencyAmount, Fraction, Token } from '@uniswap/sdk-core';
 import { logger } from '../../services/logger';
-import { EVMTxBroadcaster } from '../../chains/ethereum/evm.broadcaster';
 import routerAbi from './curve_router_abi.json';
 import oomukade, { Query } from 'oomukade';
+import { floatStringWithDecimalToBigNumber } from '../../services/base';
 
 export interface CurveTrade {
   from: string;
@@ -34,42 +34,43 @@ export class CurveFi implements Uniswapish {
   public gasLimitEstimate: number;
   private chain: Ethereum | Polygon | Avalanche;
   private chainId;
+  private chainName: string;
   private tokenList: Record<string, Token> = {};
+  private tokenbySymbol: Record<string, Token> = {};
   private _ready: boolean = false;
-  private network: string;
   public router: string;
   public routerAbi;
   public ttl: number;
   private _config: typeof CurveConfig.config;
-  private _secondary_chains: Array<Mapping>;
+
   private constructor(chain: string, network: string) {
     this._config = CurveConfig.config;
-    if (chain === 'ethereum') {
-      this.chain = Ethereum.getInstance(network);
-    } else if (chain === 'avalanche') {
-      this.chain = Avalanche.getInstance(network);
-    } else {
-      this.chain = Polygon.getInstance(network);
-    }
+    this.chain = this.pickNetwork(chain, network);
     this.router = this._config.routerAddress(network);
-    this._secondary_chains = this._config.secondaryNetwork;
     this.chainId = this.chain.chainId;
     this.ttl = this._config.ttl;
+    this.chainName = chain;
     this.gasLimitEstimate = this._config.gasLimitEstimate;
     this.routerAbi = routerAbi;
-    this.network = network;
     const curveList: CurveTokenList = tokens;
     const chainTokens = curveList[chain];
     for (const token of chainTokens.tokens) {
-      if (token.chainId === this.chainId)
-        this.tokenList[token.address] = new Token(
+      if (token.chainId === this.chainId) {
+        const converted = new Token(
           this.chainId,
           token.address,
           token.decimals,
           token.symbol,
           token.name,
         );
+        this.tokenList[token.address.toLowerCase()] = converted;
+        this.tokenbySymbol[token.symbol] = converted;
+      }
     }
+  }
+
+  getTokenByAddress(address: string): Token {
+    return this.tokenList[address.toLowerCase()];
   }
 
   public static getInstance(chain: string, network: string): CurveFi {
@@ -90,17 +91,17 @@ export class CurveFi implements Uniswapish {
     this._ready = true;
   }
 
-  getTokenByAddress(address: string): Token {
-    return this.tokenList[address];
-  }
-
-  getTokenBySymbol(symbol: string): Token | null {
-    const mapping = this._secondary_chains.pop();
-
-    if (mapping != undefined && mapping.key === this.network) {
-      return this.tokenList[symbol];
+  getTokenBySymbol(symbol: string): Token {
+    const tokenName = this._config.token(this.chainName);
+    if (symbol === tokenName) {
+      return this.tokenbySymbol[symbol];
+    } else {
+      const instance = CurveFi.getInstance(
+        this._config.secondary.chain,
+        this._config.secondary.network,
+      );
+      return instance.getTokenBySymbol(symbol);
     }
-    return this.tokenList[symbol] ? this.tokenList[symbol] : null;
   }
 
   async estimateSellTrade(
@@ -127,20 +128,50 @@ export class CurveFi implements Uniswapish {
     };
 
     const scan = await oomukade.scanRoute(query);
-    const route = scan.route;
-    if (route != undefined) {
-      // const prices = await oomukade.estimatePriceForRoute(route);
+    const result = scan.pop();
+    if (result != undefined) {
+      const prices = await oomukade.estimatePriceForRoute(result);
       const expectedAmount = CurrencyAmount.fromRawAmount(
         quoteToken,
-        scan.amountIn,
+        result.amountOut,
       );
+      let executionPrice;
+      if (prices != undefined && prices.executionPrice != '0') {
+        executionPrice = new Fraction(
+          prices.executionPrice.toString(),
+          BigNumber.from(10).pow(quoteToken.decimals).toString(),
+        );
+      } else {
+        const inTokenUnit = ethers.utils.formatUnits(
+          result.amountIn,
+          baseToken.decimals,
+        );
+        const inAmount = Number(inTokenUnit);
+        const outTokenUnit = ethers.utils.formatUnits(
+          result.amountOut,
+          quoteToken.decimals,
+        );
+        const outAmount = Number(outTokenUnit);
+        const price = outAmount / inAmount;
+        const correctAmount = floatStringWithDecimalToBigNumber(
+          price.toString(),
+          quoteToken.decimals,
+        );
+        if (correctAmount == null) {
+          throw new Error(`Can't parse ${correctAmount}`);
+        }
+        executionPrice = new Fraction(
+          correctAmount.toString(),
+          BigNumber.from(10).pow(quoteToken.decimals).toString(),
+        );
+      }
       const tradeInfo = {
         trade: {
           from: baseToken.address,
           to: quoteToken.address,
           amount: Number(amount.toString()),
           expected: expectedAmount.toSignificant(8),
-          executionPrice: expectedAmount.asFraction,
+          executionPrice: executionPrice.asFraction,
           isBuy: false,
           query: query,
         },
@@ -149,6 +180,94 @@ export class CurveFi implements Uniswapish {
       return tradeInfo;
     }
     throw new Error(`Can't find trade for ${baseToken}-${quoteToken}`);
+  }
+
+  async executeTrade(
+    wallet: Wallet,
+    trade: UniswapishTrade,
+    gasPrice: number,
+    _uniswapRouter: string,
+    _ttl: number,
+    _abi: ContractInterface,
+    gasLimit: number,
+    nonce?: number | undefined,
+    maxFeePerGas?: BigNumber | undefined,
+    maxPriorityFeePerGas?: BigNumber | undefined,
+  ): Promise<Transaction> {
+    const castedTrade = <CurveTrade>trade;
+    const query = castedTrade.query;
+
+    const scan = await oomukade.scanRoute(query);
+    const scanResult = scan.pop();
+    if (scanResult == undefined) {
+      throw new Error(`Dont have route data or query: ${castedTrade.query}`);
+    }
+    const estimate = await oomukade.estimatePriceForRoute(scanResult);
+    if (estimate == undefined) {
+      throw new Error(`Dont have estimate data or query: ${castedTrade.query}`);
+    }
+    const transactionData = await oomukade.createTransactionForRoute(
+      wallet.address,
+      wallet.address,
+      scanResult,
+      estimate,
+    );
+
+    if (transactionData == undefined) {
+      throw new Error(
+        `Can't create transaction or query: ${castedTrade.query}`,
+      );
+    }
+
+    const value = BigNumber.from(transactionData.value).add(
+      BigNumber.from(estimate.executionPrice),
+    );
+
+    let overrideParams: {
+      gasLimit: string | number;
+      value: number;
+      nonce: number | undefined;
+      maxFeePerGas?: BigNumber | undefined;
+      maxPriorityFeePerGas?: BigNumber | undefined;
+      gasPrice?: string;
+    };
+    if (maxFeePerGas || maxPriorityFeePerGas) {
+      overrideParams = {
+        gasPrice: (gasPrice * 1e9).toFixed(0),
+        gasLimit: gasLimit.toFixed(0),
+        value: value.toNumber(),
+        nonce: nonce,
+        maxFeePerGas,
+        maxPriorityFeePerGas,
+      };
+    } else {
+      overrideParams = {
+        gasPrice: (gasPrice * 1e9).toFixed(0),
+        gasLimit: gasLimit.toFixed(0),
+        value: value.toNumber(),
+        nonce: nonce,
+      };
+    }
+    const contract = new Contract(
+      transactionData.to,
+      [transactionData.abi],
+      wallet,
+    );
+    const args = [
+      transactionData.args[0],
+      transactionData.args[1],
+      [
+        transactionData.args[2].executionPrice,
+        transactionData.args[2].deadline,
+        transactionData.args[2].v,
+        transactionData.args[2].r,
+        transactionData.args[2].s,
+      ],
+    ];
+
+    const tx = await contract.start(...args, overrideParams);
+    logger.info(JSON.stringify(tx));
+    return tx;
   }
 
   async estimateBuyTrade(
@@ -168,66 +287,13 @@ export class CurveFi implements Uniswapish {
     return tradeInfo;
   }
 
-  async executeTrade(
-    wallet: Wallet,
-    trade: UniswapishTrade,
-    gasPrice: number,
-    uniswapRouter: string,
-    _ttl: number,
-    _abi: ContractInterface,
-    gasLimit: number,
-    nonce?: number | undefined,
-    maxFeePerGas?: BigNumber | undefined,
-    maxPriorityFeePerGas?: BigNumber | undefined,
-  ): Promise<Transaction> {
-    const castedTrade = <CurveTrade>trade;
-    const transactionData = await oomukade.createTransaction(
-      wallet.address,
-      uniswapRouter,
-      castedTrade.query,
-    );
-
-    let overrideParams: {
-      gasLimit: string | number;
-      value: number;
-      nonce: number | undefined;
-      maxFeePerGas?: BigNumber | undefined;
-      maxPriorityFeePerGas?: BigNumber | undefined;
-      gasPrice?: string;
-    };
-    if (maxFeePerGas || maxPriorityFeePerGas) {
-      overrideParams = {
-        gasLimit: gasLimit,
-        value: 0,
-        nonce: nonce,
-        maxFeePerGas,
-        maxPriorityFeePerGas,
-      };
+  private pickNetwork(chain: string, network: string) {
+    if (chain === 'ethereum') {
+      return Ethereum.getInstance(network);
+    } else if (chain === 'avalanche') {
+      return Avalanche.getInstance(network);
     } else {
-      overrideParams = {
-        gasPrice: (gasPrice * 1e9).toFixed(0),
-        gasLimit: gasLimit.toFixed(0),
-        value: 0,
-        nonce: nonce,
-      };
-    }
-    if (transactionData == undefined) {
-      throw new Error(
-        `Dont have transaction data or query: ${castedTrade.query}`,
-      );
-    } else {
-      const contract = new Contract(this.router, routerAbi, wallet);
-      const tx = await contract['start'](
-        ...transactionData.args,
-        overrideParams,
-      );
-      const txResponse: ContractTransaction =
-        await EVMTxBroadcaster.getInstance(
-          this.chain,
-          wallet.address,
-        ).broadcast(tx);
-      logger.info(`Transaction Details: ${JSON.stringify(txResponse.hash)}`);
-      return tx;
+      return Polygon.getInstance(network);
     }
   }
 

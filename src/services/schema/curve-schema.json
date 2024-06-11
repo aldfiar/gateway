@@ -11,6 +11,38 @@
     "ttl": {
       "type": "integer"
     },
+    "secondary": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "chain",
+        "network"
+      ]
+    },
+    "tokens": {
+      "type": "object",
+      "patternProperties": {
+        "^\\w+$": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "token"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
     "contractAddresses": {
       "type": "object",
       "patternProperties": {
@@ -30,11 +62,12 @@
       "additionalProperties": false
     }
   },
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": [
     "allowedSlippage",
     "gasLimitEstimate",
     "ttl",
-    "contractAddresses"
+    "contractAddresses",
+    "secondary"
   ]
 }

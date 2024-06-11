@@ -1,11 +1,6 @@
 import { AvailableNetworks } from '../../services/config-manager-types';
 import { ConfigManagerV2 } from '../../services/config-manager-v2';
 
-export interface Mapping {
-  key: string;
-  value: string;
-}
-
 export namespace CurveConfig {
   export interface NetworkConfig {
     allowedSlippage: string;
@@ -16,7 +11,11 @@ export namespace CurveConfig {
     availableNetworks: Array<AvailableNetworks>;
     maximumHops: number;
     chainType: string;
-    secondaryNetwork: Array<Mapping>;
+    token: (chain: string) => string;
+    secondary: {
+      chain: string;
+      network: string;
+    };
   }
 
   export const config: NetworkConfig = {
@@ -32,14 +31,16 @@ export namespace CurveConfig {
       ),
     tradingTypes: ['AMM'],
     chainType: 'EVM',
+    token: (chain: string) =>
+      ConfigManagerV2.getInstance().get(`curve.tokens.${chain}.token`),
     availableNetworks: [
       { chain: 'polygon', networks: ['mainnet', 'mumbai'] },
       { chain: 'avalanche', networks: ['avalanche', 'fuji'] },
       { chain: 'etherium', networks: ['mainnet', 'arbitrum_one', 'optimism'] },
     ],
-    secondaryNetwork: [
-      { key: 'polygon', value: 'avalanche' },
-      { key: 'avalanche', value: 'polygon' },
-    ],
+    secondary: {
+      chain: ConfigManagerV2.getInstance().get('curve.secondary.chain'),
+      network: ConfigManagerV2.getInstance().get('curve.secondary.network'),
+    },
   };
 }

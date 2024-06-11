@@ -10,6 +10,7 @@ import { UniswapConfig } from '../../connectors/uniswap/uniswap.config';
 import { Ethereumish } from '../../services/common-interfaces';
 import { ConfigManagerV2 } from '../../services/config-manager-v2';
 import { OpenoceanConfig } from '../../connectors/openocean/openocean.config';
+import { CurveConfig } from '../../connectors/curve/curve.config';
 
 export class Polygon extends EthereumBase implements Ethereumish {
   private static _instances: { [name: string]: Polygon };
@@ -28,7 +29,7 @@ export class Polygon extends EthereumBase implements Ethereumish {
       config.manualGasPrice,
       config.gasLimitTransaction,
       ConfigManagerV2.getInstance().get('server.nonceDbPath'),
-      ConfigManagerV2.getInstance().get('server.transactionDbPath')
+      ConfigManagerV2.getInstance().get('server.transactionDbPath'),
     );
     this._chain = config.network.name;
     this._nativeTokenSymbol = config.nativeCurrencySymbol;
@@ -70,7 +71,7 @@ export class Polygon extends EthereumBase implements Ethereumish {
     let spender: string;
     if (reqSpender === 'uniswap') {
       spender = UniswapConfig.config.uniswapV3SmartOrderRouterAddress(
-        this._chain
+        this._chain,
       );
     } else if (reqSpender === 'uniswapLP') {
       spender = UniswapConfig.config.uniswapV3NftManagerAddress(this._chain);
@@ -79,10 +80,12 @@ export class Polygon extends EthereumBase implements Ethereumish {
     } else if (reqSpender === 'sushiswap') {
       spender = SushiswapConfig.config.sushiswapRouterAddress(
         'polygon',
-        this._chain
+        this._chain,
       );
     } else if (reqSpender === 'openocean') {
       spender = OpenoceanConfig.config.routerAddress('polygon', this._chain);
+    } else if (reqSpender === 'curve') {
+      spender = CurveConfig.config.routerAddress(this._chain);
     } else {
       spender = reqSpender;
     }
@@ -92,7 +95,7 @@ export class Polygon extends EthereumBase implements Ethereumish {
   // cancel transaction
   async cancelTx(wallet: Wallet, nonce: number): Promise<Transaction> {
     logger.info(
-      'Canceling any existing transaction(s) with nonce number ' + nonce + '.'
+      'Canceling any existing transaction(s) with nonce number ' + nonce + '.',
     );
     return super.cancelTxWithGasPrice(wallet, nonce, this._gasPrice * 2);
   }
