@@ -133,12 +133,12 @@ export class CurveFi implements Uniswapish {
       const prices = await oomukade.estimatePriceForRoute(result);
       const expectedAmount = CurrencyAmount.fromRawAmount(
         quoteToken,
-        result.amountOut,
+        result.amountOutWithoutSlippage,
       );
       let executionPrice;
       if (prices != undefined && prices.executionPrice != '0') {
         executionPrice = new Fraction(
-          prices.executionPrice.toString(),
+          result.amountOutWithoutSlippage.toString(),
           BigNumber.from(10).pow(quoteToken.decimals).toString(),
         );
       } else {
@@ -148,7 +148,7 @@ export class CurveFi implements Uniswapish {
         );
         const inAmount = Number(inTokenUnit);
         const outTokenUnit = ethers.utils.formatUnits(
-          result.amountOut,
+          result.amountOutWithoutSlippage,
           quoteToken.decimals,
         );
         const outAmount = Number(outTokenUnit);
@@ -225,7 +225,7 @@ export class CurveFi implements Uniswapish {
 
     let overrideParams: {
       gasLimit: string | number;
-      value: number;
+      value: string | number;
       nonce: number | undefined;
       maxFeePerGas?: BigNumber | undefined;
       maxPriorityFeePerGas?: BigNumber | undefined;
@@ -235,7 +235,7 @@ export class CurveFi implements Uniswapish {
       overrideParams = {
         gasPrice: (gasPrice * 1e9).toFixed(0),
         gasLimit: gasLimit.toFixed(0),
-        value: value.toNumber(),
+        value: value.toString(),
         nonce: nonce,
         maxFeePerGas,
         maxPriorityFeePerGas,
@@ -244,7 +244,7 @@ export class CurveFi implements Uniswapish {
       overrideParams = {
         gasPrice: (gasPrice * 1e9).toFixed(0),
         gasLimit: gasLimit.toFixed(0),
-        value: value.toNumber(),
+        value: value.toString(),
         nonce: nonce,
       };
     }
