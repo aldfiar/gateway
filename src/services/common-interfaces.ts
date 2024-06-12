@@ -690,13 +690,15 @@ export interface BasicChainMethods {
   chain: string;
 }
 
-export interface Ethereumish extends BasicChainMethods, EthereumBase {
+export interface Chain extends BasicChainMethods, EthereumBase {
   cancelTx(wallet: Wallet, nonce: number): Promise<Transaction>;
   getContract(
     tokenAddress: string,
     signerOrProvider?: Wallet | Provider,
   ): Contract;
 }
+
+export type Ethereumish = Chain;
 
 export interface Xdcish extends BasicChainMethods, XdcBase {
   cancelTx(wallet: XdcWallet, nonce: number): Promise<XdcTransaction>;
@@ -821,4 +823,25 @@ export interface CustomTransactionResponse
   gasPrice: string | null;
   gasLimit: string;
   value: string;
+}
+
+export interface TransferRequest extends NetworkSelectionRequest {
+  to: string;
+  from: string;
+  amount: string;
+  token: string;
+}
+
+export type TransferResponse = string | FullTransferResponse;
+
+export interface FullTransferResponse {
+  network: string;
+  timestamp: number;
+  latency: number;
+  amount: string;
+  gasPrice: string;
+  gasLimit: string;
+  gasUsed: string;
+  gasWanted: string;
+  txHash: string;
 }

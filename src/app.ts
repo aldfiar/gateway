@@ -1,31 +1,26 @@
 /* eslint-disable @typescript-eslint/ban-types */
-import express from 'express';
-import { Request, Response, NextFunction } from 'express';
-import { ConfigRoutes } from './services/config/config.routes';
-import { CosmosRoutes } from './chains/cosmos/cosmos.routes';
-import { WalletRoutes } from './services/wallet/wallet.routes';
-import { logger } from './services/logger';
-import { addHttps } from './https';
-import {
-  asyncHandler,
-  HttpException,
-  NodeError,
-  gatewayErrorMiddleware,
-} from './services/error-handler';
-import { ConfigManagerV2 } from './services/config-manager-v2';
-import { SwaggerManager } from './services/swagger-manager';
-import { NetworkRoutes } from './network/network.routes';
-import { ConnectorsRoutes } from './connectors/connectors.routes';
-import { EVMRoutes } from './evm/evm.routes';
-import { AmmRoutes, AmmLiquidityRoutes, PerpAmmRoutes } from './amm/amm.routes';
-import { AlgorandRoutes } from './chains/algorand/algorand.routes';
-import { InjectiveRoutes } from './chains/injective/injective.routes';
-import { NearRoutes } from './chains/near/near.routes';
-import { CLOBRoutes, PerpClobRoutes } from './clob/clob.routes';
+import express, {NextFunction, Request, Response} from 'express';
+import {ConfigRoutes} from './services/config/config.routes';
+import {CosmosRoutes} from './chains/cosmos/cosmos.routes';
+import {WalletRoutes} from './services/wallet/wallet.routes';
+import {logger} from './services/logger';
+import {addHttps} from './https';
+import {asyncHandler, gatewayErrorMiddleware, HttpException, NodeError,} from './services/error-handler';
+import {ConfigManagerV2} from './services/config-manager-v2';
+import {SwaggerManager} from './services/swagger-manager';
+import {NetworkRoutes} from './network/network.routes';
+import {ConnectorsRoutes} from './connectors/connectors.routes';
+import {EVMRoutes} from './evm/evm.routes';
+import {AmmLiquidityRoutes, AmmRoutes, PerpAmmRoutes} from './amm/amm.routes';
+import {AlgorandRoutes} from './chains/algorand/algorand.routes';
+import {InjectiveRoutes} from './chains/injective/injective.routes';
+import {NearRoutes} from './chains/near/near.routes';
+import {CLOBRoutes, PerpClobRoutes} from './clob/clob.routes';
 
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
-import { CeloRoutes } from './chains/celo/celo.routes';
+import {CeloRoutes} from './chains/celo/celo.routes';
+import {ChainRoutes} from './chains/chain.routes';
 
 export const gatewayApp = express();
 
@@ -49,6 +44,7 @@ gatewayApp.use(
 
 // mount sub routers
 gatewayApp.use('/config', ConfigRoutes.router);
+gatewayApp.use('/chain', ChainRoutes.router);
 gatewayApp.use('/network', NetworkRoutes.router);
 gatewayApp.use('/evm', EVMRoutes.router);
 gatewayApp.use('/algorand', AlgorandRoutes.router);
