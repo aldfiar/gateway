@@ -7,6 +7,7 @@ import {
   nonce as evmNonce,
   poll as evmPoll,
 } from '../chains/ethereum/ethereum.controllers';
+import { getTokens as ethGetTokens } from './chain.helpers';
 import { Chain } from '../services/common-interfaces';
 
 import {
@@ -56,8 +57,8 @@ export async function getTokens(
   chain: Chain,
   req: TokensRequest,
 ): Promise<TokensResponse> {
-  const tokens = await getTokens(chain, req);
-  return tokens;
+    const tokens = await ethGetTokens(chain, req);
+    return tokens;
 }
 
 export async function allowances(

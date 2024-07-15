@@ -13,18 +13,24 @@
     },
     "secondary": {
       "type": "object",
-      "properties": {
-        "chain": {
-          "type": "string"
-        },
-        "network": {
-          "type": "string"
+      "patternProperties": {
+        "^\\w+$": {
+          "type": "object",
+          "properties": {
+            "chain": {
+              "type": "string"
+            },
+            "network": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "chain",
+            "network"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "chain",
-        "network"
-      ]
+      }
     },
     "tokens": {
       "type": "object",
@@ -40,6 +46,20 @@
             "token"
           ],
           "additionalProperties": false
+        }
+      }
+    },
+    "curve_mapping": {
+      "type": "object",
+      "patternProperties": {
+        "^\\w+$": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^\\w+$": {
+              "type": "string"
+            }
+          }
         }
       }
     },

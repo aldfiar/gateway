@@ -56,7 +56,9 @@ export interface TradeInfo {
   expectedTrade: ExpectedTrade;
 }
 
-export function convertBigInt(amount: BigNumberCelo | BigNumber | string): BigNumber {
+export function convertBigInt(
+  amount: BigNumberCelo | BigNumber | string,
+): BigNumber {
   if (amount instanceof BigNumberCelo) {
     const converted = amount.toFixed();
     return BigNumber.from(converted);
@@ -109,16 +111,19 @@ export async function getTradeInfo(
   tradeSide: string,
   allowedSlippage?: string,
 ): Promise<TradeInfo> {
-  const baseToken: Tokenish = getFullTokenFromSymbol(
-    ethereumish,
-    uniswapish,
-    baseAsset,
+  logger.error(
+    `Trade: base ${baseAsset}, quote: ${quoteAsset}, side:${tradeSide}.`,
   );
-  const quoteToken: Tokenish = getFullTokenFromSymbol(
-    ethereumish,
-    uniswapish,
-    quoteAsset,
-  );
+  let baseToken: Tokenish, quoteToken: Tokenish;
+  if (uniswapish instanceof CurveFi) {
+    const [base, quote] = uniswapish.getPair(baseAsset, quoteAsset);
+    baseToken = base;
+    quoteToken = quote;
+  } else {
+    baseToken = getFullTokenFromSymbol(ethereumish, uniswapish, baseAsset);
+    quoteToken = getFullTokenFromSymbol(ethereumish, uniswapish, quoteAsset);
+  }
+
   const requestAmount: BigNumber = BigNumber.from(
     baseAmount.toFixed(baseToken.decimals).replace('.', ''),
   );
@@ -583,7 +588,7 @@ export async function poolPrice(
   const token0: Token = getFullTokenFromSymbol(
     ethereumish,
     uniswapish,
-      req.token0,
+    req.token0,
   ) as Token;
 
   const token1: Token = getFullTokenFromSymbol(
@@ -599,7 +604,7 @@ export async function poolPrice(
     token1,
     fee,
     req.period,
-      req.interval,
+    req.interval,
   );
 
   return {
@@ -621,9 +626,6 @@ export function getFullTokenFromSymbol(
   tokenSymbol: string,
 ): Tokenish | Token {
   let fullToken: Tokenish | Token | undefined;
-  if (uniswapish instanceof CurveFi) {
-    return uniswapish.getTokenBySymbol(tokenSymbol);
-  }
   const tokenInfo: TokenInfo | undefined =
     ethereumish.getTokenBySymbol(tokenSymbol);
 
@@ -634,7 +636,7 @@ export function getFullTokenFromSymbol(
     throw new HttpException(
       500,
       TOKEN_NOT_SUPPORTED_ERROR_MESSAGE + tokenSymbol,
-        TOKEN_NOT_SUPPORTED_ERROR_CODE,
+      TOKEN_NOT_SUPPORTED_ERROR_CODE,
     );
   return fullToken;
 }

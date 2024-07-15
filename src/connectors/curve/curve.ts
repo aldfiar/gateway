@@ -18,6 +18,7 @@ import { logger } from '../../services/logger';
 import routerAbi from './curve_router_abi.json';
 import oomukade, { Query } from 'oomukade';
 import { floatStringWithDecimalToBigNumber } from '../../services/base';
+import { BigNumberish } from '../../../vendor/@ethersproject-xdc/bignumber';
 
 export interface CurveTrade {
   from: string;
@@ -35,6 +36,7 @@ export class CurveFi implements Uniswapish {
   private chain: Ethereum | Polygon | Avalanche;
   private chainId;
   private chainName: string;
+  private network: string;
   private tokenList: Record<string, Token> = {};
   private tokenbySymbol: Record<string, Token> = {};
   private _ready: boolean = false;
@@ -50,10 +52,17 @@ export class CurveFi implements Uniswapish {
     this.chainId = this.chain.chainId;
     this.ttl = this._config.ttl;
     this.chainName = chain;
+    this.network = network;
     this.gasLimitEstimate = this._config.gasLimitEstimate;
     this.routerAbi = routerAbi;
     const curveList: CurveTokenList = tokens;
-    const chainTokens = curveList[chain];
+    let chainTokens;
+    if (chain == 'ethereum') {
+      chainTokens = curveList[network];
+    } else {
+      chainTokens = curveList[chain];
+    }
+
     for (const token of chainTokens.tokens) {
       if (token.chainId === this.chainId) {
         const converted = new Token(
@@ -91,17 +100,22 @@ export class CurveFi implements Uniswapish {
     this._ready = true;
   }
 
-  getTokenBySymbol(symbol: string): Token {
-    const tokenName = this._config.token(this.chainName);
-    if (symbol === tokenName) {
-      return this.tokenbySymbol[symbol];
-    } else {
-      const instance = CurveFi.getInstance(
-        this._config.secondary.chain,
-        this._config.secondary.network,
-      );
-      return instance.getTokenBySymbol(symbol);
+  public getPair(base: string, quote: string): [Token, Token] {
+    let baseToken = this.getToken(base);
+    if (baseToken == undefined) {
+      const baseOverride = this._config.curve_mapping(this.chainName)(base);
+      baseToken = this.getToken(baseOverride);
     }
+    let secondary;
+    if (this.chainName == 'ethereum') {
+      secondary = this._config.secondary(this.network);
+    } else {
+      secondary = this._config.secondary(this.chainName);
+    }
+    const instance = CurveFi.getInstance(secondary.chain, secondary.network);
+
+    const quoteToken = instance.getToken(quote);
+    return [baseToken, quoteToken];
   }
 
   async estimateSellTrade(
@@ -130,41 +144,16 @@ export class CurveFi implements Uniswapish {
     const scan = await oomukade.scanRoute(query);
     const result = scan.pop();
     if (result != undefined) {
-      const prices = await oomukade.estimatePriceForRoute(result);
       const expectedAmount = CurrencyAmount.fromRawAmount(
         quoteToken,
         result.amountOutWithoutSlippage,
       );
-      let executionPrice;
-      if (prices != undefined && prices.executionPrice != '0') {
-        executionPrice = new Fraction(
-          result.amountOutWithoutSlippage.toString(),
-          BigNumber.from(10).pow(quoteToken.decimals).toString(),
-        );
-      } else {
-        const inTokenUnit = ethers.utils.formatUnits(
-          result.amountIn,
-          baseToken.decimals,
-        );
-        const inAmount = Number(inTokenUnit);
-        const outTokenUnit = ethers.utils.formatUnits(
-          result.amountOutWithoutSlippage,
-          quoteToken.decimals,
-        );
-        const outAmount = Number(outTokenUnit);
-        const price = outAmount / inAmount;
-        const correctAmount = floatStringWithDecimalToBigNumber(
-          price.toString(),
-          quoteToken.decimals,
-        );
-        if (correctAmount == null) {
-          throw new Error(`Can't parse ${correctAmount}`);
-        }
-        executionPrice = new Fraction(
-          correctAmount.toString(),
-          BigNumber.from(10).pow(quoteToken.decimals).toString(),
-        );
-      }
+      const executionPrice = this.calcPrice(
+        result.amountIn,
+        baseToken,
+        result.amountOutWithoutSlippage,
+        quoteToken,
+      );
       const tradeInfo = {
         trade: {
           from: baseToken.address,
@@ -182,6 +171,94 @@ export class CurveFi implements Uniswapish {
     throw new Error(`Can't find trade for ${baseToken}-${quoteToken}`);
   }
 
+  tokenToNumber(amount: BigNumberish, token: Token): number {
+    const tokenUnits = ethers.utils.formatUnits(amount, token.decimals);
+    const result = Number(tokenUnits);
+    return result;
+  }
+
+  calcPrice(
+    amountIn: BigNumberish,
+    baseToken: Token,
+    amountOut: BigNumberish,
+    quoteToken: Token,
+  ) {
+    const inAmount = this.tokenToNumber(amountIn, baseToken);
+    const outAmount = this.tokenToNumber(amountOut, quoteToken);
+    const price = outAmount / inAmount;
+    const correctAmount = floatStringWithDecimalToBigNumber(
+      price.toString(),
+      quoteToken.decimals,
+    );
+    if (correctAmount == null) {
+      throw new Error('Cant get correct amount');
+    }
+    const executionPrice = new Fraction(
+      correctAmount.toString(),
+      BigNumber.from(10).pow(quoteToken.decimals).toString(),
+    );
+    return executionPrice;
+  }
+
+  async estimateBuyTrade(
+    quoteToken: Token,
+    baseToken: Token,
+    amount: BigNumber,
+    allowedSlippage?: string | undefined,
+  ) {
+    let tradeInfo;
+    if (quoteToken.symbol != undefined && baseToken.symbol != undefined) {
+      const [fixedQuote, fixedBase] = this.getPair(
+        quoteToken.symbol,
+        baseToken.symbol,
+      );
+      // try to understand how much usdt we need
+      tradeInfo = await this.estimateSellTrade(
+        fixedBase,
+        fixedQuote,
+        amount,
+        allowedSlippage,
+      );
+      const fixed = floatStringWithDecimalToBigNumber(
+        tradeInfo.expectedAmount.toSignificant(),
+        fixedQuote.decimals,
+      );
+      const second = await this.estimateSellTrade(
+        fixedQuote,
+        fixedBase,
+        BigNumber.from(fixed),
+        allowedSlippage,
+      );
+      const denom = floatStringWithDecimalToBigNumber(
+        second.trade.expected,
+        fixedBase.decimals,
+      );
+      if (denom == null) {
+        throw new Error("Can't calculate demon");
+      }
+      const proportion: BigNumber = amount.mul(second.trade.amount).div(denom);
+      tradeInfo = await this.estimateSellTrade(
+        fixedQuote,
+        fixedBase,
+        proportion,
+        allowedSlippage,
+      );
+      const expected = CurrencyAmount.fromRawAmount(
+        fixedQuote,
+        proportion.toString(),
+      );
+      const price = this.calcPrice(amount, fixedBase, proportion, fixedQuote);
+      tradeInfo.trade.amount = Number(amount.toString());
+      tradeInfo.trade.expected = expected.toSignificant(8);
+      tradeInfo.trade.executionPrice = price.asFraction.invert();
+      tradeInfo.expectedAmount = expected;
+    } else {
+      throw new Error('Undefined tokens for trade');
+    }
+    tradeInfo.trade.isBuy = true;
+    return tradeInfo;
+  }
+
   async executeTrade(
     wallet: Wallet,
     trade: UniswapishTrade,
@@ -196,7 +273,6 @@ export class CurveFi implements Uniswapish {
   ): Promise<Transaction> {
     const castedTrade = <CurveTrade>trade;
     const query = castedTrade.query;
-
     const scan = await oomukade.scanRoute(query);
     const scanResult = scan.pop();
     if (scanResult == undefined) {
@@ -270,21 +346,8 @@ export class CurveFi implements Uniswapish {
     return tx;
   }
 
-  async estimateBuyTrade(
-    quoteToken: Token,
-    baseToken: Token,
-    amount: BigNumber,
-    allowedSlippage?: string | undefined,
-  ) {
-    const tradeInfo = await this.estimateSellTrade(
-      baseToken,
-      quoteToken,
-      amount,
-      allowedSlippage,
-    );
-    tradeInfo.trade.isBuy = true;
-    tradeInfo.trade.executionPrice = tradeInfo.trade.executionPrice.invert();
-    return tradeInfo;
+  private getToken(symbol: string): Token {
+    return this.tokenbySymbol[symbol];
   }
 
   private pickNetwork(chain: string, network: string) {

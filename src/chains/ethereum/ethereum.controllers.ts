@@ -1,11 +1,15 @@
 import ethers, {
-  constants,
-  Wallet,
-  utils,
   BigNumber,
+  constants,
   Transaction,
+  utils,
+  Wallet,
 } from 'ethers';
-import { latency, bigNumberWithDecimalToStr } from '../../services/base';
+import {
+  bigNumberWithDecimalToStr,
+  latency,
+  tokenValueToString,
+} from '../../services/base';
 import {
   HttpException,
   LOAD_WALLET_ERROR_CODE,
@@ -13,42 +17,41 @@ import {
   TOKEN_NOT_SUPPORTED_ERROR_CODE,
   TOKEN_NOT_SUPPORTED_ERROR_MESSAGE,
 } from '../../services/error-handler';
-import { tokenValueToString } from '../../services/base';
 import { TokenInfo } from './ethereum-base';
 import { getConnector } from '../../services/connection-manager';
 
 import {
-  CustomTransactionReceipt,
   CustomTransaction,
+  CustomTransactionReceipt,
   CustomTransactionResponse,
 } from './ethereum.requests';
 import {
-  Ethereumish,
-  UniswapLPish,
-  Uniswapish,
   CLOBish,
+  Ethereumish,
+  Uniswapish,
+  UniswapLPish,
 } from '../../services/common-interfaces';
 import {
-  NonceRequest,
-  NonceResponse,
   AllowancesRequest,
   AllowancesResponse,
   ApproveRequest,
   ApproveResponse,
   CancelRequest,
   CancelResponse,
+  NonceRequest,
+  NonceResponse,
 } from '../../evm/evm.requests';
 import {
-  PollRequest,
-  PollResponse,
   BalanceRequest,
   BalanceResponse,
+  PollRequest,
+  PollResponse,
 } from '../../network/network.requests';
 import { logger } from '../../services/logger';
 
 export async function nonce(
   ethereum: Ethereumish,
-  req: NonceRequest
+  req: NonceRequest,
 ): Promise<NonceResponse> {
   // get the address via the public key since we generally use the public
   // key to interact with gateway and the address is not part of the user config
@@ -59,7 +62,7 @@ export async function nonce(
 
 export async function nextNonce(
   ethereum: Ethereumish,
-  req: NonceRequest
+  req: NonceRequest,
 ): Promise<NonceResponse> {
   // get the address via the public key since we generally use the public
   // key to interact with gateway and the address is not part of the user config
@@ -70,7 +73,7 @@ export async function nextNonce(
 
 export const getTokenSymbolsToTokens = (
   ethereum: Ethereumish,
-  tokenSymbols: Array<string>
+  tokenSymbols: Array<string>,
 ): Record<string, TokenInfo> => {
   const tokens: Record<string, TokenInfo> = {};
 
@@ -85,7 +88,7 @@ export const getTokenSymbolsToTokens = (
 
 export async function allowances(
   ethereumish: Ethereumish,
-  req: AllowancesRequest
+  req: AllowancesRequest,
 ): Promise<AllowancesResponse | string> {
   const initTime = Date.now();
   const wallet = await ethereumish.getWallet(req.address);
@@ -98,17 +101,17 @@ export async function allowances(
       // instantiate a contract and pass in provider for read-only access
       const contract = ethereumish.getContract(
         tokens[symbol].address,
-        ethereumish.provider
+        ethereumish.provider,
       );
       approvals[symbol] = tokenValueToString(
         await ethereumish.getERC20Allowance(
           contract,
           wallet,
           spender,
-          tokens[symbol].decimals
-        )
+          tokens[symbol].decimals,
+        ),
       );
-    })
+    }),
   );
 
   return {
@@ -122,7 +125,7 @@ export async function allowances(
 
 export async function balances(
   ethereumish: Ethereumish,
-  req: BalanceRequest
+  req: BalanceRequest,
 ): Promise<BalanceResponse | string> {
   const initTime = Date.now();
 
@@ -140,14 +143,14 @@ export async function balances(
       throw new HttpException(
         500,
         LOAD_WALLET_ERROR_MESSAGE + err,
-        LOAD_WALLET_ERROR_CODE
+        LOAD_WALLET_ERROR_CODE,
       );
     }
 
     const tokens = getTokenSymbolsToTokens(ethereumish, req.tokenSymbols);
     if (req.tokenSymbols.includes(ethereumish.nativeTokenSymbol)) {
       balances[ethereumish.nativeTokenSymbol] = tokenValueToString(
-        await ethereumish.getNativeBalance(wallet)
+        await ethereumish.getNativeBalance(wallet),
       );
     }
     await Promise.all(
@@ -158,23 +161,23 @@ export async function balances(
           // instantiate a contract and pass in provider for read-only access
           const contract = ethereumish.getContract(
             address,
-            ethereumish.provider
+            ethereumish.provider,
           );
           const balance = await ethereumish.getERC20Balance(
             contract,
             wallet,
-            decimals
+            decimals,
           );
           balances[symbol] = tokenValueToString(balance);
         }
-      })
+      }),
     );
 
     if (!Object.keys(balances).length) {
       throw new HttpException(
         500,
         TOKEN_NOT_SUPPORTED_ERROR_MESSAGE,
-        TOKEN_NOT_SUPPORTED_ERROR_CODE
+        TOKEN_NOT_SUPPORTED_ERROR_CODE,
       );
     }
   } else {
@@ -213,8 +216,8 @@ const toEthereumTransaction = (transaction: Transaction): CustomTransaction => {
 };
 
 export async function approve(
-  ethereumish: Ethereumish,
-  req: ApproveRequest
+    ethereumish: Ethereumish,
+    req: ApproveRequest,
 ): Promise<ApproveResponse | string> {
   const { amount, nonce, address, token, maxFeePerGas, maxPriorityFeePerGas } =
     req;
@@ -228,7 +231,7 @@ export async function approve(
     throw new HttpException(
       500,
       LOAD_WALLET_ERROR_MESSAGE + err,
-      LOAD_WALLET_ERROR_CODE
+      LOAD_WALLET_ERROR_CODE,
     );
   }
   const fullToken = ethereumish.getTokenBySymbol(token);
@@ -236,7 +239,7 @@ export async function approve(
     throw new HttpException(
       500,
       TOKEN_NOT_SUPPORTED_ERROR_MESSAGE + token,
-      TOKEN_NOT_SUPPORTED_ERROR_CODE
+      TOKEN_NOT_SUPPORTED_ERROR_CODE,
     );
   }
   const amountBigNumber = amount
@@ -264,7 +267,7 @@ export async function approve(
     nonce,
     maxFeePerGasBigNumber,
     maxPriorityFeePerGasBigNumber,
-    ethereumish.gasPrice
+    ethereumish.gasPrice,
   );
 
   if (approval.hash) {
@@ -273,7 +276,7 @@ export async function approve(
       ethereumish.chainId,
       approval.hash,
       new Date(),
-      ethereumish.gasPrice
+      ethereumish.gasPrice,
     );
   }
 
@@ -293,7 +296,7 @@ export async function approve(
 // Transform those BigNumbers to string and pass the rest of the data without changes.
 
 const toEthereumTransactionReceipt = (
-  receipt: ethers.providers.TransactionReceipt | null
+    receipt: ethers.providers.TransactionReceipt | null,
 ): CustomTransactionReceipt | null => {
   if (receipt) {
     let effectiveGasPrice = null;
@@ -312,7 +315,7 @@ const toEthereumTransactionReceipt = (
 };
 
 const toEthereumTransactionResponse = (
-  response: ethers.providers.TransactionResponse | null
+    response: ethers.providers.TransactionResponse | null,
 ): CustomTransactionResponse | null => {
   if (response) {
     let gasPrice = null;
@@ -331,10 +334,10 @@ const toEthereumTransactionResponse = (
 };
 
 export function willTxSucceed(
-  txDuration: number,
-  txDurationLimit: number,
-  txGasPrice: number,
-  currentGasPrice: number
+    txDuration: number,
+    txDurationLimit: number,
+    txGasPrice: number,
+    currentGasPrice: number,
 ): boolean {
   if (txDuration > txDurationLimit && currentGasPrice > txGasPrice) {
     return false;
@@ -349,8 +352,8 @@ export function willTxSucceed(
 // 3: in the mempool and likely to fail
 // 0: in the mempool but we dont have data to guess its status
 export async function poll(
-  ethereumish: Ethereumish,
-  req: PollRequest
+    ethereumish: Ethereumish,
+    req: PollRequest,
 ): Promise<PollResponse> {
   const initTime = Date.now();
   const currentBlock = await ethereumish.getCurrentBlockNumber();
@@ -370,8 +373,8 @@ export async function poll(
       txStatus = 0;
 
       const transactions = await ethereumish.txStorage.getTxs(
-        ethereumish.chain,
-        ethereumish.chainId
+          ethereumish.chain,
+          ethereumish.chainId,
       );
 
       if (transactions[txData.hash]) {
@@ -396,9 +399,9 @@ export async function poll(
         try {
           const connector: Uniswapish | UniswapLPish | CLOBish =
             await getConnector<Uniswapish | UniswapLPish | CLOBish>(
-              req.chain,
-              req.network,
-              req.connector
+                req.chain,
+                req.network,
+                req.connector,
             );
 
           txReceipt.logs = connector.abiDecoder?.decodeLogs(txReceipt.logs);
@@ -410,7 +413,7 @@ export async function poll(
   }
 
   logger.info(
-    `Poll ${ethereumish.chain}, txHash ${req.txHash}, status ${txStatus}.`
+      `Poll ${ethereumish.chain}, txHash ${req.txHash}, status ${txStatus}.`,
   );
   return {
     network: ethereumish.chain,
@@ -425,8 +428,8 @@ export async function poll(
 }
 
 export async function cancel(
-  ethereumish: Ethereumish,
-  req: CancelRequest
+    ethereumish: Ethereumish,
+    req: CancelRequest,
 ): Promise<CancelResponse> {
   const initTime = Date.now();
   let wallet: Wallet;
@@ -436,7 +439,7 @@ export async function cancel(
     throw new HttpException(
       500,
       LOAD_WALLET_ERROR_MESSAGE + err,
-      LOAD_WALLET_ERROR_CODE
+      LOAD_WALLET_ERROR_CODE,
     );
   }
 
@@ -444,7 +447,7 @@ export async function cancel(
   const cancelTx = await ethereumish.cancelTx(wallet, req.nonce);
 
   logger.info(
-    `Cancelled transaction at nonce ${req.nonce}, cancel txHash ${cancelTx.hash}.`
+    `Cancelled transaction at nonce ${req.nonce}, cancel txHash ${cancelTx.hash}.`,
   );
 
   return {

@@ -1,10 +1,26 @@
-allowedSlippage: '2/100'
+allowedSlippage: '5/100'
 gasLimitEstimate: 150688
 ttl: 600
+tokens:
+  polygon:
+    token: 'avDAI'
+  avalanche:
+    token: 'USDC'
+secondary:
+  polygon:
+    chain: 'avalanche'
+    network: 'avalanche'
+  avalanche:
+    chain: 'polygon'
+    network: 'polygon'
+
+curve_mapping:
+  polygon:
+    ETH: "WETH"
 
 contractAddresses:
   mainnet:
-    routerAddress: '0x9af02523431E9Ec1Cc649c75aB0322fF34cde337'
+    routerAddress: '0xE7Db62c7960183895190274F26925388db4A3bE4'
   goerli:
     routerAddress: '0x9af02523431E9Ec1Cc649c75aB0322fF34cde337'
   arbitrum_one:
